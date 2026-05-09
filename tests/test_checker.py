@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 
 from jura.checker import (
-    detect_jurisdiction,
     run_jurisdiction_check,
 )
 from jura.models import JurisdictionBlock, SubmissionEvent
@@ -21,19 +20,13 @@ from jura.models import JurisdictionBlock, SubmissionEvent
 def _event(**overrides) -> SubmissionEvent:
     defaults = dict(
         submission_id="TEST-001",
-        named_insured="Acme Corp",
-        pc_account_id="PC-9999",
+        insured_name="Acme Corp",
         sic_code="5812",
-        sic_description="Eating places",
-        writing_state="TX",
-        mailing_state="TX",
-        premises_zip="73301",
-        mailing_zip="73301",
+        state="TX",
+        zip_code="73301",
         tiv=500_000.0,
         credit_score_used=False,
         new_business=True,
-        property_coverage=True,
-        created_at=datetime.utcnow(),
     )
     defaults.update(overrides)
     return SubmissionEvent(**defaults)
@@ -44,7 +37,7 @@ def _event(**overrides) -> SubmissionEvent:
 # ---------------------------------------------------------------------------
 
 def test_tx_admitted_clear():
-    result = run_jurisdiction_check(_event(writing_state="TX", mailing_state="TX"))
+    result = run_jurisdiction_check(_event(state="TX"))
     assert result.market == "admitted"
     assert result.admitted is True
     assert result.eligible is True
@@ -63,10 +56,8 @@ def test_ca_credit_disclose():
     result = run_jurisdiction_check(
         _event(
             submission_id="TEST-CA-CREDIT",
-            writing_state="CA",
-            mailing_state="CA",
-            premises_zip="94102",   # San Francisco — prefix 941, not a FAIR Plan zone
-            mailing_zip="94102",
+            state="CA",
+            zip_code="94102",   # San Francisco — prefix 941, not a FAIR Plan zone
             credit_score_used=True,
         )
     )
@@ -84,10 +75,8 @@ def test_fl_moratorium_raises():
     with pytest.raises(JurisdictionBlock) as exc_info:
         run_jurisdiction_check(
             _event(
-                writing_state="FL",
-                mailing_state="FL",
-                premises_zip="33139",
-                mailing_zip="33139",
+                state="FL",
+                zip_code="33139",
             )
         )
     assert "moratorium" in exc_info.value.reason.lower()
@@ -103,10 +92,8 @@ def test_ca_fair_plan_zip_raises():
     with pytest.raises(JurisdictionBlock) as exc_info:
         run_jurisdiction_check(
             _event(
-                writing_state="CA",
-                mailing_state="CA",
-                premises_zip="91901",   # prefix 919 — Malibu/Pacific Palisades zone
-                mailing_zip="91901",
+                state="CA",
+                zip_code="91901",   # prefix 919 — Malibu/Pacific Palisades zone
             )
         )
     assert "FAIR Plan" in exc_info.value.reason or "fair" in exc_info.value.reason.lower()
@@ -120,10 +107,8 @@ def test_ca_fair_plan_zip_raises():
 def test_ny_credit_block():
     result = run_jurisdiction_check(
         _event(
-            writing_state="NY",
-            mailing_state="NY",
-            premises_zip="10001",
-            mailing_zip="10001",
+            state="NY",
+            zip_code="10001",
             credit_score_used=True,
         )
     )
@@ -141,15 +126,13 @@ def test_ny_credit_block():
 def test_ca_nv_multi_state():
     result = run_jurisdiction_check(
         _event(
-            writing_state="CA",
-            mailing_state="NV",
-            premises_zip="94102",   # SF — not a FAIR Plan or moratorium zip
-            mailing_zip="89101",
+            state="CA",
+            zip_code="94102",   # SF — not a FAIR Plan or moratorium zip
         )
     )
     assert result.multi_state is True
     jd = detect_jurisdiction(
-        _event(writing_state="CA", mailing_state="NV")
+        _event(state="CA")
     )
     assert jd["multi_state"] is True
 
@@ -161,8 +144,7 @@ def test_ca_nv_multi_state():
 def test_tx_high_tiv_surplus_warn():
     result = run_jurisdiction_check(
         _event(
-            writing_state="TX",
-            mailing_state="TX",
+            state="TX",
             tiv=6_000_000.0,
         )
     )
@@ -176,17 +158,15 @@ def test_tx_high_tiv_surplus_warn():
 # ---------------------------------------------------------------------------
 
 def test_eligible_admitted_clear():
-    result = run_jurisdiction_check(_event(writing_state="TX", mailing_state="TX"))
+    result = run_jurisdiction_check(_event(state="TX"))
     assert result.eligible is True
 
 
 def test_eligible_false_for_restricted():
     result = run_jurisdiction_check(
         _event(
-            writing_state="NY",
-            mailing_state="NY",
-            premises_zip="10001",
-            mailing_zip="10001",
+            state="NY",
+            zip_code="10001",
             credit_score_used=True,
         )
     )
@@ -202,10 +182,8 @@ def test_disclosure_doc_written():
     result = run_jurisdiction_check(
         _event(
             submission_id="TEST-DISC-001",
-            writing_state="CA",
-            mailing_state="CA",
-            premises_zip="94102",
-            mailing_zip="94102",
+            state="CA",
+            zip_code="94102",
             credit_score_used=True,
         )
     )

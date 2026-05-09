@@ -2,21 +2,21 @@ from __future__ import annotations
 
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from rich.console import Console
 
 from compliance.review import router as compliance_router
 from jura.audit import JurisdictionAuditLogger
-from jura.checker import ADMITTED_STATES
+from jura.checker import ADMITTED_STATES, run_jurisdiction_check
 from jura.db import SubmissionDB, _SEED
 from jura.llm import get_client, get_provider, get_provider_config, llm_status
-from jura.models import SubmissionEvent
+from jura.models import JurisdictionBlock, JurisdictionResult, SubmissionEvent
 from jura.router import JurisdictionRouter
 from jura.views import router as views_router
 
@@ -25,6 +25,12 @@ _ROOT = Path(__file__).parent.parent
 console = Console()
 
 _VERSION = "0.1.0"
+
+# ---------------------------------------------------------------------------
+# In-memory session state
+# ---------------------------------------------------------------------------
+
+SESSION_RESULTS: dict[str, JurisdictionResult] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -35,19 +41,8 @@ _VERSION = "0.1.0"
 async def lifespan(app: FastAPI):
     load_dotenv()
 
-    # Ensure data directories and files exist
-    data_dir = _ROOT / "data"
-    data_dir.mkdir(exist_ok=True)
-    (data_dir / "aria_pending").mkdir(exist_ok=True)
-    (data_dir / "hold_notices").mkdir(exist_ok=True)
-    (data_dir / "disclosures").mkdir(exist_ok=True)
-    (data_dir / "es_notices").mkdir(exist_ok=True)
-    for jsonl in ("jurisdiction_log.jsonl", "compliance_decisions.jsonl"):
-        p = data_dir / jsonl
-        if not p.exists():
-            p.touch()
-
     db = SubmissionDB()
+    db.seed()
     audit = JurisdictionAuditLogger()
     llm_client = get_client()
     hitl_mode = os.environ.get("HITL_MODE", "terminal")
@@ -82,6 +77,14 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Jura", version=_VERSION, lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(views_router)
 app.include_router(compliance_router)
 
@@ -91,26 +94,61 @@ app.include_router(compliance_router)
 # ---------------------------------------------------------------------------
 
 def _seed_row_to_event(row: dict) -> SubmissionEvent:
-    return SubmissionEvent(
-        submission_id=row["id"],
-        named_insured=row["named_insured"],
-        pc_account_id=row["pc_account_id"],
-        sic_code=row["sic_code"],
-        sic_description=row["sic_description"],
-        writing_state=row["writing_state"],
-        mailing_state=row["mailing_state"],
-        premises_zip=row["premises_zip"],
-        mailing_zip=row.get("mailing_zip", row["premises_zip"]),
-        tiv=row.get("tiv"),
-        credit_score_used=bool(row.get("credit_score_used", False)),
-        new_business=True,
-        property_coverage=True,
-        created_at=datetime.utcnow(),
+    return SubmissionEvent(**row)
+
+
+def _evaluate(submission: SubmissionEvent) -> JurisdictionResult:
+    """Run jurisdiction check, audit it, forward to next agent, store result."""
+    audit: JurisdictionAuditLogger = app.state.audit
+    try:
+        result = run_jurisdiction_check(submission)
+    except JurisdictionBlock as exc:
+        result = JurisdictionResult(
+            submission_id=submission.submission_id,
+            insured_name=submission.insured_name,
+            market="blocked",
+            doi_flags=[],
+            rationale=f"Submission blocked. {exc.statutory_ref}. Statutory hold issued.",
+            routed_to="blocked",
+            blocked_reason=exc.statutory_ref,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+        )
+
+    audit.log_jurisdiction(result, insured_name=submission.insured_name)
+
+    from jura.pipeline import forward_to_next_agent
+    forward_meta = forward_to_next_agent(result)
+    audit.log_forwarded(
+        submission_id=result.submission_id,
+        target=result.routed_to,
+        forward_meta=forward_meta,
     )
+
+    # If a live Aria call was attempted, append the second-leg audit entry.
+    aria = forward_meta.get("aria")
+    if isinstance(aria, dict):
+        if "status_code" in aria:
+            audit.log_response_received(
+                submission_id=result.submission_id,
+                target=result.routed_to,
+                status_code=aria["status_code"],
+                response=aria.get("response"),
+            )
+        elif "error" in aria:
+            audit.log_unreachable(
+                submission_id=result.submission_id,
+                target=result.routed_to,
+                url=aria.get("url", ""),
+                error=aria["error"],
+                error_type=aria.get("error_type", "Exception"),
+            )
+
+    SESSION_RESULTS[result.submission_id] = result
+    return result
 
 
 # ---------------------------------------------------------------------------
-# Endpoints
+# Endpoints (existing)
 # ---------------------------------------------------------------------------
 
 @app.post("/jurisdiction")
@@ -156,3 +194,69 @@ async def test_submit(n: int):
     row = _SEED[n]
     event = _seed_row_to_event(row)
     return await router.route(event)
+
+
+# ---------------------------------------------------------------------------
+# Endpoints (new — Phase A4)
+# ---------------------------------------------------------------------------
+
+@app.post("/evaluate", response_model=JurisdictionResult)
+async def post_evaluate(submission: SubmissionEvent) -> JurisdictionResult:
+    return _evaluate(submission)
+
+
+@app.post("/evaluate/{submission_id}", response_model=JurisdictionResult)
+async def post_evaluate_by_id(submission_id: str) -> JurisdictionResult:
+    db: SubmissionDB = app.state.db
+    row = db.get(submission_id)
+    if row is None:
+        # Fall back to the seed list so the route works pre-seed
+        for s in _SEED:
+            if s["submission_id"] == submission_id:
+                row = s
+                break
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Submission {submission_id!r} not found")
+    submission = _seed_row_to_event(row)
+    return _evaluate(submission)
+
+
+@app.get("/results", response_model=list[JurisdictionResult])
+def get_results() -> list[JurisdictionResult]:
+    return list(SESSION_RESULTS.values())
+
+
+@app.get("/results/{submission_id}", response_model=JurisdictionResult)
+def get_result(submission_id: str) -> JurisdictionResult:
+    result = SESSION_RESULTS.get(submission_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Result {submission_id!r} not found")
+    return result
+
+
+@app.get("/audit/{submission_id}")
+def get_audit(submission_id: str):
+    audit: JurisdictionAuditLogger = app.state.audit
+    return audit.events_for(submission_id)
+
+
+@app.get("/demo/run-all", response_model=list[JurisdictionResult])
+def demo_run_all() -> list[JurisdictionResult]:
+    db: SubmissionDB = app.state.db
+    SESSION_RESULTS.clear()
+    results: list[JurisdictionResult] = []
+    for row in _SEED:
+        submission = _seed_row_to_event(row)
+        db.upsert(row)
+        results.append(_evaluate(submission))
+    return results
+
+
+@app.get("/demo/reset")
+def demo_reset():
+    db: SubmissionDB = app.state.db
+    audit: JurisdictionAuditLogger = app.state.audit
+    SESSION_RESULTS.clear()
+    audit.clear()
+    db.seed()
+    return {"reset": True, "submissions_seeded": len(_SEED)}

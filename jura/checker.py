@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-import random
-from collections import defaultdict
-from datetime import date, datetime, timedelta
-from pathlib import Path
+from datetime import date, datetime, timedelta, timezone
 
-import yaml
-
+from jura.mock_data import (
+    ADMITTED_STATES,
+    CA_FAIR_PLAN_ZIPS,
+    DOI_RULES,
+    FL_MORATORIUM_ZIPS,
+    SURPLUS_LINES,
+)
 from jura.models import (
     DOIFlag,
     JurisdictionBlock,
@@ -15,41 +17,12 @@ from jura.models import (
     SubmissionEvent,
 )
 
-# ---------------------------------------------------------------------------
-# Paths
-# ---------------------------------------------------------------------------
-
-_ROOT = Path(__file__).parent.parent
-_CONFIG = _ROOT / "config"
-_TEMPLATES_DIR = _ROOT / "data" / "disclosure_templates"
-_DISCLOSURES_DIR = _ROOT / "data" / "disclosures"
-
-# ---------------------------------------------------------------------------
-# Config loaded once at import
-# ---------------------------------------------------------------------------
-
-with open(_CONFIG / "admitted_states.yaml") as _f:
-    ADMITTED_STATES: dict = yaml.safe_load(_f)
-
-with open(_CONFIG / "doi_rules.yaml") as _f:
-    DOI_RULES: dict = yaml.safe_load(_f)
-
-with open(_CONFIG / "surplus_lines.yaml") as _f:
-    SURPLUS_LINES: dict = yaml.safe_load(_f)
-
-with open(_CONFIG / "fl_moratorium_zips.yaml") as _f:
-    FL_MORATORIUM_ZIPS: dict = yaml.safe_load(_f)
-
-with open(_CONFIG / "ca_fair_plan_zips.yaml") as _f:
-    CA_FAIR_PLAN_ZIPS: dict = yaml.safe_load(_f)
 
 # ---------------------------------------------------------------------------
 # ZIP proxy objects for eval() context
 # ---------------------------------------------------------------------------
 
 class _MoratoriumZipProxy:
-    _zips: set[str] = set(FL_MORATORIUM_ZIPS["moratorium_zips"])
-
     def __contains__(self, zip5: str) -> bool:
         return is_moratorium_zip(zip5)
 
@@ -60,45 +33,15 @@ class _FairPlanZipProxy:
 
 
 # ---------------------------------------------------------------------------
-# Rule-topic grouping for conflict detection
-# ---------------------------------------------------------------------------
-
-_TOPIC_KEYWORDS: dict[str, list[str]] = {
-    "credit_score":  ["credit"],
-    "sinkhole":      ["sinkhole"],
-    "moratorium":    ["moratorium"],
-    "surplus_lines": ["surplus"],
-    "free_look":     ["free_look", "free look"],
-    "fair_plan":     ["fair_plan", "fair plan"],
-}
-
-
-def _rule_topic(flag: DOIFlag) -> str:
-    haystack = (flag.rule_name + " " + flag.rule_id).lower()
-    for topic, keywords in _TOPIC_KEYWORDS.items():
-        if any(kw in haystack for kw in keywords):
-            return topic
-    return flag.rule_id
-
-
-# ---------------------------------------------------------------------------
 # Public functions
 # ---------------------------------------------------------------------------
 
-def detect_jurisdiction(event: SubmissionEvent) -> dict:
-    state = event.writing_state
-    admitted = state in ADMITTED_STATES["admitted"]
-    multi_state = event.writing_state != event.mailing_state
-    return {"state": state, "admitted": admitted, "multi_state": multi_state}
-
-
 def is_fair_plan_zip(zip5: str) -> bool:
-    prefixes = CA_FAIR_PLAN_ZIPS["fair_plan_zip_prefixes"]
-    return zip5[:3] in prefixes
+    return zip5[:3] in CA_FAIR_PLAN_ZIPS
 
 
 def is_moratorium_zip(zip5: str) -> bool:
-    return zip5 in FL_MORATORIUM_ZIPS["moratorium_zips"]
+    return zip5 in FL_MORATORIUM_ZIPS
 
 
 def evaluate_doi_rules(state: str, event: SubmissionEvent) -> list[DOIFlag]:
@@ -109,10 +52,10 @@ def evaluate_doi_rules(state: str, event: SubmissionEvent) -> list[DOIFlag]:
         # event fields
         "credit_score_used": event.credit_score_used,
         "new_business": event.new_business,
-        "property_coverage": event.property_coverage,
-        "writing_state": event.writing_state,
-        "mailing_state": event.mailing_state,
-        "premises_zip": event.premises_zip,
+        "property_coverage": True,
+        "writing_state": event.state,
+        "mailing_state": event.state,
+        "premises_zip": event.zip_code,
         "tiv": event.tiv or 0.0,
         "sic_code": event.sic_code,
         # derived
@@ -154,6 +97,13 @@ def evaluate_doi_rules(state: str, event: SubmissionEvent) -> list[DOIFlag]:
     return flags
 
 
+def _surplus_threshold(state: str) -> float | None:
+    state_cfg = (SURPLUS_LINES.get("thresholds") or {}).get(state)
+    if not state_cfg:
+        return None
+    return float(state_cfg["tiv_threshold"])
+
+
 def check_surplus_eligible(state: str, event: SubmissionEvent) -> bool:
     if state not in ADMITTED_STATES["surplus_lines_licensed"]:
         return False
@@ -168,114 +118,105 @@ def check_surplus_eligible(state: str, event: SubmissionEvent) -> bool:
 
 
 def generate_es_mock_declinations(state: str, sic: str) -> list[dict]:
-    carriers: list[str] = SURPLUS_LINES["mock_admitted_carriers"]
-    today = date.today()
     return [
-        {
-            "carrier": carrier,
-            "date": str(today - timedelta(days=random.randint(5, 30))),
-            "reason": f"Outside appetite for SIC {sic}",
-        }
-        for carrier in carriers[:3]
+        {"carrier": "Mock Carrier A", "declined_reason": "Outside appetite"},
+        {"carrier": "Mock Carrier B", "declined_reason": "TIV too high"},
+        {"carrier": "Mock Carrier C", "declined_reason": "Geographic restriction"},
     ]
 
 
-def detect_multi_state_conflict(states: list[str], flags: list[DOIFlag]) -> list[str]:
-    active = [f for f in flags if f.level != "clear"]
-    topic_levels: dict[str, set[str]] = defaultdict(set)
-    for flag in active:
-        topic_levels[_rule_topic(flag)].add(flag.level)
-    return [topic for topic, levels in topic_levels.items() if len(levels) > 1]
-
-
-# ---------------------------------------------------------------------------
-# Disclosure doc writer
-# ---------------------------------------------------------------------------
-
-def _write_disclosure_doc(event: SubmissionEvent, flag: DOIFlag) -> str:
-    if not flag.disclosure_template:
-        return ""
-    template_path = _TEMPLATES_DIR / flag.disclosure_template
-    if not template_path.exists():
-        return ""
-    _DISCLOSURES_DIR.mkdir(parents=True, exist_ok=True)
-    ts = datetime.utcnow().strftime("%Y%m%d%H%M%S%f")
-    filename = f"{event.submission_id}_{flag.rule_id}_{ts}.txt"
-    out_path = _DISCLOSURES_DIR / filename
-    out_path.write_text(template_path.read_text())
-    return str(out_path)
+# Re-exported from jura.notices to keep the evaluation engine free of file I/O.
+from jura.notices import _write_disclosure_doc  # noqa: E402,F401
 
 
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def run_jurisdiction_check(event: SubmissionEvent) -> JurisdictionResult:
-    # 1. Detect jurisdiction
-    jd = detect_jurisdiction(event)
-    state = jd["state"]
-    admitted = jd["admitted"]
-    multi_state = jd["multi_state"]
+def _build_rationale(
+    market: str,
+    state: str,
+    tiv: float,
+    blocked_reason: str | None,
+    n_disclose: int,
+) -> str:
+    if market == "blocked":
+        return f"Submission blocked. {blocked_reason}. Statutory hold issued."
+    if market == "es":
+        return (
+            f"Submission routed to E&S market. "
+            f"TIV of ${tiv:,.0f} exceeds surplus threshold for {state}."
+        )
+    if n_disclose > 0:
+        return (
+            f"Submission cleared for admitted market in {state}. "
+            f"{n_disclose} disclosure flag(s) require compliance review "
+            f"before forwarding to appetite scoring."
+        )
+    return (
+        f"Submission cleared for admitted market in {state}. "
+        f"No DOI flags triggered. Forwarding to appetite scoring."
+    )
 
-    # 2. Hard geo-block checks — raise immediately
-    if state == "FL" and is_moratorium_zip(event.premises_zip):
+
+def run_jurisdiction_check(event: SubmissionEvent) -> JurisdictionResult:
+    state = event.state
+
+    # Hard geo-block checks — raise immediately (kept for backward compat with
+    # existing tests; the route layer catches these and converts to a result).
+    if state == "FL" and is_moratorium_zip(event.zip_code):
         raise JurisdictionBlock(
-            reason=f"FL coastal moratorium applies to ZIP {event.premises_zip}",
+            reason=f"FL coastal moratorium applies to ZIP {event.zip_code}",
             statutory_ref="FL Ins Code §627.351",
             broker_notice_template="fl_moratorium_notice.txt",
         )
-    if state == "CA" and is_fair_plan_zip(event.premises_zip):
+    if state == "CA" and is_fair_plan_zip(event.zip_code):
         raise JurisdictionBlock(
-            reason=f"CA FAIR Plan wildfire zone: ZIP {event.premises_zip} (prefix {event.premises_zip[:3]})",
+            reason=f"CA FAIR Plan wildfire zone: ZIP {event.zip_code} (prefix {event.zip_code[:3]})",
             statutory_ref="CA Ins Code §10091",
             broker_notice_template="ca_fair_plan_notice.txt",
         )
 
-    # 3. Evaluate DOI rules for writing state
+    # Evaluate DOI rules for the writing state
     doi_flags = evaluate_doi_rules(state, event)
 
-    # 4. Multi-state: also evaluate mailing state rules
-    conflicts: list[str] = []
-    if multi_state:
-        mailing_flags = evaluate_doi_rules(event.mailing_state, event)
-        doi_flags = doi_flags + mailing_flags
-        conflicts = detect_multi_state_conflict([state, event.mailing_state], doi_flags)
-
-    # 5. Surplus lines eligibility
-    es_eligible = check_surplus_eligible(state, event)
-
-    # 6. Determine market
-    has_block = any(f.level == "block" for f in doi_flags)
-    if has_block:
-        market = "restricted"
-    elif conflicts:
-        market = "multi_state_conflict"
-    elif admitted:
-        market = "admitted"
-    else:
-        market = "surplus_lines"
-
-    # 7. Generate disclosure docs for triggered DISCLOSE flags
-    disclosure_docs: list[str] = []
-    for flag in doi_flags:
-        if flag.level == "disclose" and flag.disclosure_template:
-            path = _write_disclosure_doc(event, flag)
-            if path:
-                disclosure_docs.append(path)
-
-    # 8. Build result
+    # Routing logic
     block_flags = [f for f in doi_flags if f.level == "block"]
+    disclose_flags = [f for f in doi_flags if f.level == "disclose"]
+    threshold = _surplus_threshold(state)
+
+    if block_flags:
+        market = "blocked"
+        routed_to = "blocked"
+        blocked_reason = block_flags[0].statutory_ref
+    elif threshold is not None and event.tiv > threshold:
+        market = "es"
+        routed_to = "compliance_queue"
+        blocked_reason = None
+    elif disclose_flags:
+        market = "admitted"
+        routed_to = "aria"
+        blocked_reason = None
+    else:
+        market = "admitted"
+        routed_to = "aria"
+        blocked_reason = None
+
+    rationale = _build_rationale(
+        market=market,
+        state=state,
+        tiv=event.tiv,
+        blocked_reason=blocked_reason,
+        n_disclose=len(disclose_flags),
+    )
+
     return JurisdictionResult(
         submission_id=event.submission_id,
-        writing_state=state,
+        insured_name=event.insured_name,
         market=market,
-        admitted=admitted,
-        multi_state=multi_state,
-        es_eligible=es_eligible,
         doi_flags=doi_flags,
-        block_reason=block_flags[0].description if block_flags else None,
-        statutory_ref=block_flags[0].statutory_ref if block_flags else None,
-        disclosure_docs=disclosure_docs,
-        rationale="",
-        checked_at=datetime.utcnow(),
+        rationale=rationale,
+        routed_to=routed_to,
+        blocked_reason=blocked_reason,
+        timestamp=datetime.now(timezone.utc).isoformat(),
     )

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, Undefined
@@ -13,6 +13,21 @@ _HOLD_NOTICES_DIR = _DATA / "hold_notices"
 _DISCLOSURES_DIR = _DATA / "disclosures"
 _ES_NOTICES_DIR = _DATA / "es_notices"
 _DISCLOSURE_TEMPLATES_DIR = _DATA / "disclosure_templates"
+_TEMPLATES_DIR = _DISCLOSURE_TEMPLATES_DIR
+
+
+def _write_disclosure_doc(event: SubmissionEvent, flag: DOIFlag) -> str:
+    if not flag.disclosure_template:
+        return ""
+    template_path = _TEMPLATES_DIR / flag.disclosure_template
+    if not template_path.exists():
+        return ""
+    _DISCLOSURES_DIR.mkdir(parents=True, exist_ok=True)
+    ts = datetime.utcnow().strftime("%Y%m%d%H%M%S%f")
+    filename = f"{event.submission_id}_{flag.rule_id}_{ts}.txt"
+    out_path = _DISCLOSURES_DIR / filename
+    out_path.write_text(template_path.read_text())
+    return str(out_path)
 
 
 def _env(template_dir: Path) -> Environment:
