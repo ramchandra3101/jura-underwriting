@@ -48,8 +48,8 @@ def write_hold_notice(
     template = _env(_DATA).get_template("hold_notice_template.txt")
     content = template.render(
         submission_id=submission_id,
-        named_insured=event.named_insured,
-        writing_state=event.writing_state,
+        named_insured=event.insured_name,
+        writing_state=event.state,
         block_reason=block_reason,
         statutory_ref=statutory_ref,
         date=date.today().isoformat(),
@@ -69,9 +69,9 @@ def write_disclosure(
     _DISCLOSURES_DIR.mkdir(parents=True, exist_ok=True)
     template = _env(_DISCLOSURE_TEMPLATES_DIR).get_template(flag.disclosure_template)
     content = template.render(
-        named_insured=event.named_insured,
+        named_insured=event.insured_name,
         date=date.today().isoformat(),
-        state=event.writing_state,
+        state=event.state,
     )
     out_path = _DISCLOSURES_DIR / f"disclosure_{submission_id}_{flag.rule_id}.txt"
     out_path.write_text(content)
@@ -92,10 +92,10 @@ def write_es_notice(
     content = (
         f"E&S PLACEMENT NOTICE\n"
         f"{'=' * 60}\n"
-        f"Named Insured: {event.named_insured}\n"
+        f"Named Insured: {event.insured_name}\n"
         f"State:         {es_result.state}\n"
         f"Date:          {date.today().isoformat()}\n\n"
-        f"E&S placement notice: {event.named_insured} — "
+        f"E&S placement notice: {event.insured_name} — "
         f"{es_result.state} surplus lines eligible.\n\n"
         f"Diligent Search: {n} admitted carrier(s) declined:\n"
         f"{declination_lines}\n\n"

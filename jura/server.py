@@ -12,10 +12,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from rich.console import Console
 
 from compliance.review import router as compliance_router
+from intake.router import router as intake_router
 from jura.audit import JurisdictionAuditLogger
 from jura.checker import ADMITTED_STATES, run_jurisdiction_check
-from jura.db import SubmissionDB, _SEED
-from jura.llm import get_client, get_provider, get_provider_config, llm_status
+from jura.db import SubmissionDB
+from jura.guards import apply_high_value_guard, validate_submission
 from jura.models import JurisdictionBlock, JurisdictionResult, SubmissionEvent
 from jura.router import JurisdictionRouter
 from jura.views import router as views_router
@@ -42,9 +43,7 @@ async def lifespan(app: FastAPI):
     load_dotenv()
 
     db = SubmissionDB()
-    db.seed()
     audit = JurisdictionAuditLogger()
-    llm_client = get_client()
     hitl_mode = os.environ.get("HITL_MODE", "terminal")
 
     import jura.notices as notices_module
@@ -52,21 +51,21 @@ async def lifespan(app: FastAPI):
         db=db,
         audit=audit,
         notices=notices_module,
-        llm_client=llm_client,
         hitl_mode=hitl_mode,
     )
 
     app.state.db = db
     app.state.audit = audit
     app.state.router = router
+    app.state.session_results = SESSION_RESULTS
 
-    provider = get_provider()
-    pcfg = get_provider_config()
     aria_endpoint = os.environ.get("ARIA_ENDPOINT", "http://localhost:8001/score")
+    gemini_key_status = "[green]set[/green]" if os.environ.get("GEMINI_API_KEY") else "[red]not set[/red]"
 
     console.print()
     console.print("[bold cyan]Jura — Jurisdiction & Regulatory Authority agent[/bold cyan]")
-    console.print(f"  Provider: [green]{provider}[/green] · Model: [green]{pcfg['model']}[/green]")
+    console.print(f"  Routing: [green]deterministic[/green]")
+    console.print(f"  Gemini (intake OCR): {gemini_key_status}")
     console.print(f"  Aria endpoint: [dim]{aria_endpoint}[/dim]")
     console.print(f"  HITL mode: [yellow]{hitl_mode}[/yellow]")
     console.print(f"  Port: [dim]8003[/dim]")
@@ -87,19 +86,26 @@ app.add_middleware(
 
 app.include_router(views_router)
 app.include_router(compliance_router)
+app.include_router(intake_router)
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _seed_row_to_event(row: dict) -> SubmissionEvent:
-    return SubmissionEvent(**row)
-
-
 def _evaluate(submission: SubmissionEvent) -> JurisdictionResult:
     """Run jurisdiction check, audit it, forward to next agent, store result."""
+    db: SubmissionDB = app.state.db
     audit: JurisdictionAuditLogger = app.state.audit
+
+    # Guard 2: validate before running the checker
+    guard = validate_submission(submission, db)
+    if not guard.passed:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "Submission failed validation", "errors": guard.errors, "warnings": guard.warnings},
+        )
+
     try:
         result = run_jurisdiction_check(submission)
     except JurisdictionBlock as exc:
@@ -114,7 +120,19 @@ def _evaluate(submission: SubmissionEvent) -> JurisdictionResult:
             timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
+    # Guard 3: high-value escalation
+    result = apply_high_value_guard(result, submission.tiv)
+
     audit.log_jurisdiction(result, insured_name=submission.insured_name)
+
+    if result.has_disclose and result.market == "admitted":
+        db.update_status(result.submission_id, "admitted_disclose_pending")
+    elif result.market == "es":
+        db.update_status(result.submission_id, "surplus_pending")
+    elif result.market == "blocked":
+        db.update_status(result.submission_id, "jurisdiction_blocked")
+    else:
+        db.update_status(result.submission_id, "forwarded_to_aria")
 
     from jura.pipeline import forward_to_next_agent
     forward_meta = forward_to_next_agent(result)
@@ -181,19 +199,9 @@ def get_health():
         "status": "ok",
         "version": _VERSION,
         "hitl_mode": os.environ.get("HITL_MODE", "terminal"),
-        "llm": llm_status(),
+        "routing": "deterministic",
         "aria_endpoint": os.environ.get("ARIA_ENDPOINT", "http://localhost:8001/score"),
     }
-
-
-@app.post("/test/submit/{n}")
-async def test_submit(n: int):
-    if not (0 <= n <= 4):
-        raise HTTPException(status_code=400, detail="n must be 0–4")
-    router: JurisdictionRouter = app.state.router
-    row = _SEED[n]
-    event = _seed_row_to_event(row)
-    return await router.route(event)
 
 
 # ---------------------------------------------------------------------------
@@ -210,14 +218,8 @@ async def post_evaluate_by_id(submission_id: str) -> JurisdictionResult:
     db: SubmissionDB = app.state.db
     row = db.get(submission_id)
     if row is None:
-        # Fall back to the seed list so the route works pre-seed
-        for s in _SEED:
-            if s["submission_id"] == submission_id:
-                row = s
-                break
-    if row is None:
         raise HTTPException(status_code=404, detail=f"Submission {submission_id!r} not found")
-    submission = _seed_row_to_event(row)
+    submission = SubmissionEvent(**row)
     return _evaluate(submission)
 
 
@@ -240,23 +242,13 @@ def get_audit(submission_id: str):
     return audit.events_for(submission_id)
 
 
-@app.get("/demo/run-all", response_model=list[JurisdictionResult])
-def demo_run_all() -> list[JurisdictionResult]:
-    db: SubmissionDB = app.state.db
-    SESSION_RESULTS.clear()
-    results: list[JurisdictionResult] = []
-    for row in _SEED:
-        submission = _seed_row_to_event(row)
-        db.upsert(row)
-        results.append(_evaluate(submission))
-    return results
-
-
 @app.get("/demo/reset")
 def demo_reset():
+    import intake.store as intake_store
     db: SubmissionDB = app.state.db
     audit: JurisdictionAuditLogger = app.state.audit
     SESSION_RESULTS.clear()
     audit.clear()
     db.seed()
-    return {"reset": True, "submissions_seeded": len(_SEED)}
+    intake_store.clear()
+    return {"reset": True}

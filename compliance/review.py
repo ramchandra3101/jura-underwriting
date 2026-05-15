@@ -13,7 +13,6 @@ from fastapi.templating import Jinja2Templates
 
 from jura.audit import JurisdictionAuditLogger
 from jura.db import SubmissionDB
-from jura.llm import get_provider
 from jura.models import DOIFlag, JurisdictionResult, SubmissionEvent
 
 _ROOT = Path(__file__).parent.parent
@@ -68,7 +67,7 @@ def _base(request: Request, active: str) -> dict:
         "request": request,
         "active": active,
         "counts": _counts(db),
-        "llm_provider": get_provider(),
+        "llm_provider": "deterministic",
     }
 
 
@@ -134,53 +133,38 @@ def _find_disclosure_file(submission_id: str, rule_id: str) -> Path | None:
 
 def _reconstruct_event(row: dict) -> SubmissionEvent:
     return SubmissionEvent(
-        submission_id=row["id"],
-        named_insured=row["named_insured"],
-        pc_account_id=row.get("pc_account_id", ""),
-        sic_code=row["sic_code"],
-        sic_description=row.get("sic_description", ""),
-        writing_state=row["writing_state"],
-        mailing_state=row.get("mailing_state", row["writing_state"]),
-        premises_zip=row["premises_zip"],
-        mailing_zip=row.get("mailing_zip", row["premises_zip"]),
-        tiv=row.get("tiv"),
+        submission_id=row.get("id", row.get("submission_id", "")),
+        insured_name=row.get("named_insured", row.get("insured_name", "")),
+        state=row.get("writing_state", row.get("state", "")),
+        zip_code=row.get("premises_zip", row.get("zip_code", "")),
+        sic_code=row.get("sic_code", ""),
+        tiv=float(row.get("tiv") or 0.0),
         credit_score_used=bool(row.get("credit_score_used", False)),
-        new_business=True,
-        property_coverage=True,
-        created_at=datetime.utcnow(),
+        new_business=bool(row.get("new_business", True)),
     )
 
 
-def _reconstruct_result(log: dict, submission_id: str) -> JurisdictionResult:
+def _reconstruct_result(log: dict, row: dict, submission_id: str) -> JurisdictionResult:
+    state = row.get("state", row.get("writing_state", ""))
     doi_flags = []
     for f in log.get("doi_flags", []):
         doi_flags.append(DOIFlag(
             rule_id=f["rule_id"],
             rule_name=f.get("rule_name", f["rule_id"]),
             level=f["level"],
-            state=log.get("writing_state", ""),
+            state=state,
             statutory_ref=f.get("statutory_ref", ""),
             description=f.get("description", ""),
         ))
-    checked_at_str = log.get("checked_at", datetime.utcnow().isoformat())
-    try:
-        checked_at = datetime.fromisoformat(checked_at_str)
-    except Exception:
-        checked_at = datetime.utcnow()
-
     return JurisdictionResult(
         submission_id=submission_id,
-        writing_state=log.get("writing_state", ""),
+        insured_name=log.get("insured_name", row.get("named_insured", row.get("insured_name", ""))),
         market=log.get("market", "admitted"),
-        admitted=log.get("market") == "admitted",
-        multi_state=False,
-        es_eligible=False,
         doi_flags=doi_flags,
-        block_reason=None,
-        statutory_ref=None,
-        disclosure_docs=[],
         rationale="",
-        checked_at=checked_at,
+        routed_to="aria",
+        blocked_reason=None,
+        timestamp=log.get("timestamp", datetime.now(timezone.utc).isoformat()),
     )
 
 
@@ -200,7 +184,7 @@ def get_queue(request: Request):
         log = _latest_log(audit, sub["id"])
         sub = dict(sub)
         sub["doi_flags"] = log.get("doi_flags", [])
-        sub["sla"] = _sla(log["checked_at"]) if log.get("checked_at") else None
+        sub["sla"] = _sla(log["timestamp"]) if log.get("timestamp") else None
         # find any disclosure docs
         docs = []
         for f in sub["doi_flags"]:
@@ -231,7 +215,7 @@ def get_review(request: Request, submission_id: str):
 
     log = _latest_log(audit, submission_id)
     doi_flags = log.get("doi_flags", [])
-    checked_at = log.get("checked_at")
+    checked_at = log.get("timestamp")
     sla_info = _sla(checked_at) if checked_at else None
 
     # Read disclosure file contents for each disclose flag
@@ -272,12 +256,17 @@ async def post_decide(
         audit.log_compliance_decision(submission_id, reviewer_id, "approve", notes)
         db.update_status(submission_id, "admitted_disclose_approved")
 
-        # Forward to Aria
-        log = _latest_log(audit, submission_id)
-        event = _reconstruct_event(row)
-        result = _reconstruct_result(log, submission_id)
+        # Forward to Aria — prefer live SESSION_RESULTS, fall back to reconstruction.
+        session_results: dict = request.app.state.session_results
+        result = session_results.get(submission_id)
+        if result is None:
+            log = _latest_log(audit, submission_id)
+            result = _reconstruct_result(log, row, submission_id)
+        else:
+            result = result.model_copy(update={"routed_to": "aria"})
         try:
-            await jura_router._forward_to_aria(event, result)
+            from jura.pipeline import forward_to_next_agent
+            forward_to_next_agent(result)
         except Exception:
             pass
 

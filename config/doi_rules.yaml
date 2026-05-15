@@ -7,14 +7,27 @@ CA:
     disclosure_template: "ca_ab2414_disclosure.txt"
 
   - id: ca_fair_plan
-    name: FAIR Plan overlap check
+    name: FAIR Plan wildfire zone block
     type: block
     trigger_condition: "premises_zip in CA_FAIR_PLAN_ZIPS"
     statutory_ref: "CA Ins Code §10091"
 
+  - id: ca_earthquake_disclosure
+    name: Earthquake hazard disclosure
+    type: disclose
+    trigger_condition: "property_coverage == true"
+    statutory_ref: "CA Ins Code §10081"
+    disclosure_template: "ca_earthquake_disclosure.txt"
+
+  - id: ca_surplus_diligent_search
+    name: Surplus lines diligent search notice
+    type: warn
+    trigger_condition: "admitted_market == false"
+    statutory_ref: "CA Ins Code §1765.1"
+
 FL:
   - id: fl_moratorium
-    name: Coastal moratorium
+    name: Coastal new-business moratorium
     type: block
     trigger_condition: "premises_zip in FL_MORATORIUM_ZIPS"
     statutory_ref: "FL Ins Code §627.351"
@@ -25,6 +38,19 @@ FL:
     trigger_condition: "writing_state == FL and property_coverage == true"
     statutory_ref: "FL Ins Code §627.706"
     disclosure_template: "fl_sinkhole_disclosure.txt"
+
+  - id: fl_wind_mitigation
+    name: Wind mitigation inspection required
+    type: disclose
+    trigger_condition: "property_coverage == true and new_business == true and tiv > 300000"
+    statutory_ref: "FL Ins Code §627.0629"
+    disclosure_template: "fl_wind_mitigation_notice.txt"
+
+  - id: fl_citizens_notice
+    name: Citizens Property Insurance eligibility notice
+    type: warn
+    trigger_condition: "property_coverage == true and tiv < 1000000"
+    statutory_ref: "FL Ins Code §627.351(6)"
 
 NY:
   - id: ny_part86
@@ -40,56 +66,256 @@ NY:
     statutory_ref: "NY Ins Law §3209"
     disclosure_template: "ny_free_look_notice.txt"
 
+  - id: ny_scaffold_law
+    name: Scaffold Law absolute liability disclosure
+    type: disclose
+    trigger_condition: "'1500' <= sic_code <= '1799'"
+    statutory_ref: "NY Labor Law §240-241"
+    disclosure_template: "ny_scaffold_disclosure.txt"
+
+  - id: ny_large_account_review
+    name: Large commercial account additional review
+    type: warn
+    trigger_condition: "tiv > 3000000"
+    statutory_ref: "NY Ins Law §2118"
+
 TX:
   - id: tx_surplus_threshold
-    name: Surplus lines eligibility
+    name: Surplus lines eligibility — TIV threshold
     type: warn
     trigger_condition: "tiv > 5000000 and admitted_market == true"
     statutory_ref: "TX Ins Code §981.004"
 
-IL: []
+  - id: tx_twia_territory
+    name: TWIA windstorm territory — mandatory notice
+    type: disclose
+    trigger_condition: "premises_zip in TX_TWIA_ZIPS"
+    statutory_ref: "TX Ins Code §2210.003"
+    disclosure_template: "tx_twia_notice.txt"
 
-AL: []
+  - id: tx_surplus_diligent_effort
+    name: Surplus lines diligent effort certification
+    type: warn
+    trigger_condition: "admitted_market == false"
+    statutory_ref: "TX Ins Code §981.005"
+
+IL:
+  - id: il_surplus_tax_notice
+    name: Surplus lines premium tax notice
+    type: warn
+    trigger_condition: "tiv > 3000000"
+    statutory_ref: "IL Ins Code §445"
+
+  - id: il_large_commercial_filing
+    name: Large commercial risk regulatory filing
+    type: disclose
+    trigger_condition: "tiv > 10000000"
+    statutory_ref: "IL Ins Code §155.04"
+    disclosure_template: "il_large_commercial_notice.txt"
+
+CO:
+  - id: co_wildfire_disclosure
+    name: Wildfire hazard zone disclosure
+    type: disclose
+    trigger_condition: "property_coverage == true and tiv > 500000"
+    statutory_ref: "CO Rev Stat §10-4-110.8"
+    disclosure_template: "co_wildfire_disclosure.txt"
+
+  - id: co_hail_deductible_notice
+    name: Hail damage separate deductible notice
+    type: warn
+    trigger_condition: "property_coverage == true"
+    statutory_ref: "CO Division of Insurance Bulletin B-5.26"
+
+LA:
+  - id: la_wind_pool_disclosure
+    name: Louisiana Citizens windstorm pool disclosure
+    type: disclose
+    trigger_condition: "property_coverage == true and premises_zip in LA_COAST_ZIPS"
+    statutory_ref: "LA Rev Stat §22:2293"
+    disclosure_template: "la_wind_pool_notice.txt"
+
+  - id: la_surplus_admitted_attempt
+    name: Surplus lines admitted market attempt required
+    type: warn
+    trigger_condition: "tiv > 1000000"
+    statutory_ref: "LA Rev Stat §22:434"
+
+  - id: la_hurricane_deductible
+    name: Named storm / hurricane deductible disclosure
+    type: disclose
+    trigger_condition: "property_coverage == true"
+    statutory_ref: "LA Rev Stat §22:1265"
+    disclosure_template: "la_hurricane_deductible.txt"
+
+NJ:
+  - id: nj_coastal_barrier_block
+    name: Coastal Barrier Resources Act — coverage restricted
+    type: block
+    trigger_condition: "premises_zip in NJ_COAST_ZIPS"
+    statutory_ref: "NJ Rev Stat §17:36-5.39 / 16 USC §3504"
+
+  - id: nj_fair_act_notice
+    name: NJ FAIR Plan availability notice
+    type: warn
+    trigger_condition: "property_coverage == true and new_business == true"
+    statutory_ref: "NJ Rev Stat §17:37A-1"
+
+  - id: nj_mold_disclosure
+    name: Mold / environmental hazard disclosure
+    type: disclose
+    trigger_condition: "property_coverage == true and tiv > 750000"
+    statutory_ref: "NJ Rev Stat §17:36-5.34"
+    disclosure_template: "nj_mold_disclosure.txt"
+
+MA:
+  - id: ma_surplus_restriction
+    name: Surplus lines admitted-first requirement
+    type: warn
+    trigger_condition: "tiv > 1500000"
+    statutory_ref: "209 CMR 182.00"
+
+  - id: ma_independent_procurement_notice
+    name: Independent procurement / direct placement notice
+    type: disclose
+    trigger_condition: "tiv > 5000000"
+    statutory_ref: "MA Gen Laws c.175A §4"
+    disclosure_template: "ma_procurement_notice.txt"
+
+WA:
+  - id: wa_earthquake_disclosure
+    name: Pacific Northwest seismic zone disclosure
+    type: disclose
+    trigger_condition: "property_coverage == true"
+    statutory_ref: "WA Rev Code §48.18.2901"
+    disclosure_template: "wa_earthquake_notice.txt"
+
+  - id: wa_surplus_tax_notice
+    name: Surplus lines premium tax 2% filing notice
+    type: warn
+    trigger_condition: "tiv > 1500000"
+    statutory_ref: "WA Rev Code §48.15.130"
+
+MD:
+  - id: md_credit_adverse_action
+    name: Credit adverse action notice required
+    type: disclose
+    trigger_condition: "credit_score_used == true"
+    statutory_ref: "MD Ins Code §27-501"
+    disclosure_template: "md_credit_adverse_notice.txt"
+
+  - id: md_surplus_lines_notice
+    name: Surplus lines consumer notice
+    type: warn
+    trigger_condition: "tiv > 2000000"
+    statutory_ref: "MD Ins Code §3-323"
+
+MN:
+  - id: mn_credit_scoring_disclosure
+    name: Credit scoring use disclosure
+    type: disclose
+    trigger_condition: "credit_score_used == true"
+    statutory_ref: "MN Stat §72A.20 Subd.36"
+    disclosure_template: "mn_credit_disclosure.txt"
+
+OH:
+  - id: oh_surplus_notice
+    name: Surplus lines consumer disclosure
+    type: warn
+    trigger_condition: "tiv > 2000000"
+    statutory_ref: "OH Rev Code §3905.33"
+
+OR:
+  - id: or_surplus_lines_notice
+    name: Surplus lines filing and tax notice
+    type: warn
+    trigger_condition: "tiv > 1000000"
+    statutory_ref: "OR Rev Stat §735.405"
+
+  - id: or_earthquake_zone
+    name: Cascadia subduction zone earthquake disclosure
+    type: disclose
+    trigger_condition: "property_coverage == true"
+    statutory_ref: "OR Rev Stat §742.240"
+    disclosure_template: "or_earthquake_notice.txt"
+
+PA:
+  - id: pa_surplus_lines_affidavit
+    name: Surplus lines diligent search affidavit
+    type: warn
+    trigger_condition: "tiv > 3000000"
+    statutory_ref: "PA Stat §40 P.S. §991.1604"
+
+GA:
+  - id: ga_surplus_eligibility
+    name: Surplus lines eligibility determination
+    type: warn
+    trigger_condition: "tiv > 2000000"
+    statutory_ref: "GA Code §33-5-25"
+
+HI:
+  - id: hi_hurricane_disclosure
+    name: Hurricane and volcanic activity disclosure
+    type: disclose
+    trigger_condition: "property_coverage == true"
+    statutory_ref: "HI Rev Stat §431:10C-301"
+    disclosure_template: "hi_hurricane_notice.txt"
+
+  - id: hi_surplus_notice
+    name: Non-admitted insurer consumer notice
+    type: warn
+    trigger_condition: "tiv > 1000000"
+    statutory_ref: "HI Rev Stat §431:8-313"
+
+VA:
+  - id: va_surplus_notice
+    name: Surplus lines consumer disclosure
+    type: warn
+    trigger_condition: "tiv > 2000000"
+    statutory_ref: "VA Code §38.2-4813"
+
+NC:
+  - id: nc_beach_plan_notice
+    name: NC Beach Plan / FAIR Plan eligibility notice
+    type: warn
+    trigger_condition: "property_coverage == true and premises_zip in NC_COAST_ZIPS"
+    statutory_ref: "NC Gen Stat §58-45-5"
+
+SC:
+  - id: sc_wind_pool_disclosure
+    name: SC Wind and Hail Underwriting Association notice
+    type: disclose
+    trigger_condition: "property_coverage == true and premises_zip in SC_COAST_ZIPS"
+    statutory_ref: "SC Code §38-75-310"
+    disclosure_template: "sc_wind_pool_notice.txt"
+
+# States with no active DOI rules (admitted, standard risk)
+AK: []
 AZ: []
 AR: []
-CO: []
 CT: []
 DE: []
-GA: []
-HI: []
 ID: []
 IN: []
 IA: []
 KS: []
 KY: []
-LA: []
 ME: []
-MD: []
-MA: []
 MI: []
-MN: []
 MS: []
 MO: []
 MT: []
 NE: []
 NV: []
 NH: []
-NJ: []
 NM: []
-NC: []
 ND: []
-OH: []
 OK: []
-OR: []
-PA: []
 RI: []
-SC: []
 SD: []
 TN: []
 UT: []
 VT: []
-VA: []
-WA: []
 WV: []
 WI: []
 WY: []

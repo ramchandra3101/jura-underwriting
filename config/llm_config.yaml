@@ -1,4 +1,3 @@
-provider: openai          # options: openai | anthropic
 openai:
   model: gpt-4o
   temperature: 0.0
@@ -6,6 +5,11 @@ openai:
   timeout_seconds: 15
 anthropic:
   model: claude-sonnet-4-20250514
+  temperature: 0.0
+  max_tokens: 512
+  timeout_seconds: 15
+gemini:
+  model: gemini-2.5-flash
   temperature: 0.0
   max_tokens: 512
   timeout_seconds: 15

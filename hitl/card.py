@@ -26,16 +26,16 @@ def render_block_card(event: "SubmissionEvent", block_info) -> None:
         reason = block_info.reason
         statutory_ref = block_info.statutory_ref
     else:  # JurisdictionResult with has_block=True
-        reason = block_info.block_reason or "Jurisdiction block — see DOI flags"
-        statutory_ref = block_info.statutory_ref or "N/A"
+        reason = block_info.blocked_reason or "Jurisdiction block — see DOI flags"
+        statutory_ref = block_info.blocked_reason or "N/A"
 
     content = Table.grid(padding=(0, 2))
     content.add_column(style="bold dim", no_wrap=True)
     content.add_column()
-    content.add_row("Named Insured", event.named_insured)
-    content.add_row("Writing State", event.writing_state)
-    content.add_row("ZIP Code", event.premises_zip)
-    content.add_row("SIC", f"{event.sic_code} — {event.sic_description}")
+    content.add_row("Named Insured", event.insured_name)
+    content.add_row("Writing State", event.state)
+    content.add_row("ZIP Code", event.zip_code)
+    content.add_row("SIC", event.sic_code)
     content.add_row("TIV", f"${event.tiv:,.0f}" if event.tiv else "N/A")
     content.add_row("", "")
     content.add_row("Block Reason", Text(reason, style="bold red"))
@@ -78,18 +78,14 @@ def render_disclose_card(
                 f.disclosure_template or "—",
             )
 
-    docs_text = "\n".join(f"  • {p}" for p in result.disclosure_docs) or "  (none yet)"
-
     console.print()
     console.print(Panel(
         flags_table,
         title="[bold yellow]Jura — Disclosure Required[/bold yellow]",
-        subtitle=f"[dim]Submission: {event.submission_id} · {event.named_insured}[/dim]",
+        subtitle=f"[dim]Submission: {event.submission_id} · {event.insured_name}[/dim]",
         border_style="yellow",
         padding=(1, 2),
     ))
-    console.print(f"[dim]Disclosure docs written to data/disclosures/:[/dim]")
-    console.print(docs_text)
     console.print()
     console.print("[bold]Review actions:[/bold]  [green][A][/green] Approve & forward to Aria"
                   "   [red][R][/red] Request changes")
@@ -120,9 +116,9 @@ def render_conflict_card(
     content = Table.grid(padding=(0, 2))
     content.add_column(style="bold dim", no_wrap=True)
     content.add_column()
-    content.add_row("Named Insured", event.named_insured)
+    content.add_row("Named Insured", event.insured_name)
     content.add_row("States", Text(states_str, style="bold"))
-    content.add_row("SIC", f"{event.sic_code} — {event.sic_description}")
+    content.add_row("SIC", event.sic_code)
     content.add_row("", "")
     content.add_row("Conflicting Topics", Text(rules_str, style="red"))
     content.add_row("Summary", exc.conflict_summary)

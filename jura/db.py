@@ -5,65 +5,14 @@ Replaces the SQLite implementation. The four required public methods are
 (``get_submission``, ``list_submissions``, ``update_status`` …) remain as
 no-op or pass-through shims so the existing HTML routes don't crash on
 page load — they simply see an empty/legacy view.
+
+Submissions are no longer seeded from hardcoded fixtures. All submissions
+enter through the intake pipeline (POST /intake/upload → confirm).
 """
 from __future__ import annotations
 
 
 _STORE: dict[str, dict] = {}
-
-
-_SEED: list[dict] = [
-    {
-        "submission_id": "SUB-001",
-        "insured_name": "Rossi's Italian Kitchen",
-        "state": "IL",
-        "zip_code": "60601",
-        "sic_code": "5812",
-        "tiv": 450000.0,
-        "credit_score_used": False,
-        "new_business": True,
-    },
-    {
-        "submission_id": "SUB-002",
-        "insured_name": "Patel Food Markets",
-        "state": "FL",
-        "zip_code": "33139",
-        "sic_code": "5411",
-        "tiv": 820000.0,
-        "credit_score_used": False,
-        "new_business": True,
-    },
-    {
-        "submission_id": "SUB-003",
-        "insured_name": "Harbor View Lounge",
-        "state": "CA",
-        "zip_code": "90210",
-        "sic_code": "5813",
-        "tiv": 620000.0,
-        "credit_score_used": True,
-        "new_business": False,
-    },
-    {
-        "submission_id": "SUB-004",
-        "insured_name": "Apex Business Services",
-        "state": "NY",
-        "zip_code": "10001",
-        "sic_code": "7374",
-        "tiv": 310000.0,
-        "credit_score_used": True,
-        "new_business": True,
-    },
-    {
-        "submission_id": "SUB-005",
-        "insured_name": "Greenberg Builders",
-        "state": "TX",
-        "zip_code": "75001",
-        "sic_code": "1731",
-        "tiv": 6200000.0,
-        "credit_score_used": False,
-        "new_business": True,
-    },
-]
 
 
 class SubmissionDB:
@@ -84,8 +33,6 @@ class SubmissionDB:
 
     def seed(self) -> None:
         _STORE.clear()
-        for row in _SEED:
-            self.upsert(row)
 
     # ------------------------------------------------------------------
     # Legacy shims — keep existing HTML routes from crashing.

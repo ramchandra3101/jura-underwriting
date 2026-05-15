@@ -7,6 +7,7 @@ from typing import Any
 from jura.audit import JurisdictionAuditLogger
 from jura.checker import generate_es_mock_declinations, run_jurisdiction_check
 from jura.db import SubmissionDB
+from jura.guards import apply_high_value_guard, validate_submission
 from jura.models import (
     ESResult,
     JurisdictionBlock,
@@ -23,13 +24,11 @@ class JurisdictionRouter:
         db: SubmissionDB,
         audit: JurisdictionAuditLogger,
         notices: Any,          # module ref (write_* functions imported directly)
-        llm_client: Any,
         hitl_mode: str = "terminal",
     ) -> None:
         self.db = db
         self.audit = audit
         self.notices = notices
-        self.llm_client = llm_client
         self.hitl_mode = hitl_mode
 
     # ------------------------------------------------------------------
@@ -37,6 +36,16 @@ class JurisdictionRouter:
     # ------------------------------------------------------------------
 
     async def route(self, event: SubmissionEvent) -> dict:
+        # Guard 2: validate submission input before touching the DB or checker
+        guard = validate_submission(event, self.db)
+        if not guard.passed:
+            return {
+                "outcome": "guard_rejected",
+                "submission_id": event.submission_id,
+                "errors": guard.errors,
+                "warnings": guard.warnings,
+            }
+
         self.db.upsert(event.model_dump())
 
         try:
@@ -65,7 +74,20 @@ class JurisdictionRouter:
                 "summary": exc.conflict_summary,
             }
 
+        # Guard 3: escalate high-value submissions before forwarding to Aria
+        result = apply_high_value_guard(result, event.tiv)
+
         self.audit.log_jurisdiction(result, insured_name=event.insured_name)
+
+        # Reflect routing decision in the DB so compliance queue queries work.
+        if result.has_disclose and result.market == "admitted":
+            self.db.update_status(result.submission_id, "admitted_disclose_pending")
+        elif result.market == "es":
+            self.db.update_status(result.submission_id, "surplus_pending")
+        elif result.market == "blocked":
+            self.db.update_status(result.submission_id, "jurisdiction_blocked")
+        else:
+            self.db.update_status(result.submission_id, "forwarded_to_aria")
 
         forward_meta = forward_to_next_agent(result)
         self.audit.log_forwarded(

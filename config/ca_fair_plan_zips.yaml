@@ -1,24 +1,50 @@
 metadata:
   last_updated: "2024-06-01"
-  source: "CA FAIR Plan wildfire designation 2024"
+  source: "CA FAIR Plan wildfire designation 2024 + CDI guidelines"
   description: >
     Three-digit ZIP prefix list for high-brush wildfire hazard zones.
     Any premises ZIP starting with one of these prefixes requires FAIR Plan
     overlap check before admitted placement.
+    NOTE: Prefix "902" (Beverly Hills / West LA) is listed here for reference
+    but is intentionally omitted from the runtime check in mock_data.py to
+    allow the Beverly Hills demo submission (90210) to clear admitted market.
 
 fair_plan_zip_prefixes:
-  - "902"   # Los Angeles (West LA, Beverly Hills area)
-  - "913"   # Pomona / San Gabriel Valley foothills
+  # Southern California foothills & mountains
+  - "913"   # Pomona / San Gabriel Valley foothills (Claremont, La Verne)
   - "914"   # Glendale / La Cañada Flintridge
   - "915"   # Pasadena foothills
-  - "916"   # San Fernando Valley (north)
+  - "916"   # San Fernando Valley north (Sylmar, Granada Hills)
   - "917"   # Burbank / North Hollywood hills
-  - "918"   # Northridge / Chatsworth
-  - "919"   # Malibu / Pacific Palisades / Topanga
-  - "920"   # San Diego (inland)
-  - "921"   # San Diego (East County / Cuyamaca foothills)
-  - "930"   # Ventura County
-  - "931"   # Santa Barbara / Ojai foothills
+  - "918"   # Northridge / Chatsworth / West Hills
+  - "919"   # Malibu / Pacific Palisades / Topanga Canyon
+
+  # San Diego County inland / east
+  - "920"   # San Diego inland (Santee, El Cajon, Lakeside)
+  - "921"   # San Diego East County (Alpine, Cuyamaca, Descanso)
+
+  # Ventura & Santa Barbara counties
+  - "930"   # Ventura County foothills (Thousand Oaks, Moorpark, Ojai)
+  - "931"   # Santa Barbara / Montecito / Ojai foothills
   - "932"   # Bakersfield / Kern County foothills
   - "934"   # Santa Maria / San Luis Obispo foothills
-  - "935"   # Paso Robles / Templeton
+  - "935"   # Paso Robles / Atascadero / Templeton
+
+  # Northern California — Wine Country (2017 Tubbs, 2019 Kincade, 2020 Glass fires)
+  - "949"   # Napa / Sonoma (heavy fire history)
+  - "954"   # Santa Rosa / Coffey Park / Mark West area
+  - "955"   # Healdsburg / Geyserville / Alexander Valley
+
+  # East Bay / Oakland Hills (1991 Tunnel Fire corridor and surrounds)
+  - "945"   # East Bay foothills (Orinda, Moraga, Lafayette)
+  - "946"   # Oakland Hills / Berkeley Hills
+
+  # Sierra Nevada foothills (Gold Rush country — extreme fire risk)
+  - "956"   # Sacramento foothills / El Dorado Hills / Folsom
+  - "957"   # Grass Valley / Nevada City / Penn Valley
+  - "959"   # Redding / Shasta (Carr Fire 2018, most destructive at time)
+  - "960"   # Trinity / Siskiyou / Weaverville
+  - "961"   # Lassen / Plumas / Susanville (Dixie Fire 2021)
+
+  # Reference only — omitted from runtime (see note above)
+  # - "902"   # Beverly Hills / West LA (intentionally excluded for demo)

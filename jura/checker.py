@@ -7,7 +7,12 @@ from jura.mock_data import (
     CA_FAIR_PLAN_ZIPS,
     DOI_RULES,
     FL_MORATORIUM_ZIPS,
+    LA_COAST_ZIPS,
+    NJ_COAST_ZIPS,
+    NC_COAST_ZIPS,
+    SC_COAST_ZIPS,
     SURPLUS_LINES,
+    TX_TWIA_ZIPS,
 )
 from jura.models import (
     DOIFlag,
@@ -32,8 +37,33 @@ class _FairPlanZipProxy:
         return is_fair_plan_zip(zip5)
 
 
+class _TwiaTxZipProxy:
+    def __contains__(self, zip5: str) -> bool:
+        return zip5 in TX_TWIA_ZIPS
+
+
+class _LaCoastZipProxy:
+    def __contains__(self, zip5: str) -> bool:
+        return zip5 in LA_COAST_ZIPS
+
+
+class _NjCoastZipProxy:
+    def __contains__(self, zip5: str) -> bool:
+        return zip5 in NJ_COAST_ZIPS
+
+
+class _NcCoastZipProxy:
+    def __contains__(self, zip5: str) -> bool:
+        return zip5 in NC_COAST_ZIPS
+
+
+class _ScCoastZipProxy:
+    def __contains__(self, zip5: str) -> bool:
+        return zip5 in SC_COAST_ZIPS
+
+
 # ---------------------------------------------------------------------------
-# Public functions
+# Public lookup functions
 # ---------------------------------------------------------------------------
 
 def is_fair_plan_zip(zip5: str) -> bool:
@@ -63,11 +93,26 @@ def evaluate_doi_rules(state: str, event: SubmissionEvent) -> list[DOIFlag]:
         # YAML boolean literals
         "true": True,
         "false": False,
-        # state-code constants (trigger strings use bare identifiers like `FL`)
-        "FL": "FL", "CA": "CA", "NY": "NY", "TX": "TX", "IL": "IL",
+        # State-code constants — all 50 states + DC
+        "AL": "AL", "AK": "AK", "AZ": "AZ", "AR": "AR", "CA": "CA",
+        "CO": "CO", "CT": "CT", "DE": "DE", "FL": "FL", "GA": "GA",
+        "HI": "HI", "ID": "ID", "IL": "IL", "IN": "IN", "IA": "IA",
+        "KS": "KS", "KY": "KY", "LA": "LA", "ME": "ME", "MD": "MD",
+        "MA": "MA", "MI": "MI", "MN": "MN", "MS": "MS", "MO": "MO",
+        "MT": "MT", "NE": "NE", "NV": "NV", "NH": "NH", "NJ": "NJ",
+        "NM": "NM", "NY": "NY", "NC": "NC", "ND": "ND", "OH": "OH",
+        "OK": "OK", "OR": "OR", "PA": "PA", "RI": "RI", "SC": "SC",
+        "SD": "SD", "TN": "TN", "TX": "TX", "UT": "UT", "VT": "VT",
+        "VA": "VA", "WA": "WA", "WV": "WV", "WI": "WI", "WY": "WY",
+        "DC": "DC",
         # ZIP set proxies
         "CA_FAIR_PLAN_ZIPS": _FairPlanZipProxy(),
         "FL_MORATORIUM_ZIPS": _MoratoriumZipProxy(),
+        "TX_TWIA_ZIPS": _TwiaTxZipProxy(),
+        "LA_COAST_ZIPS": _LaCoastZipProxy(),
+        "NJ_COAST_ZIPS": _NjCoastZipProxy(),
+        "NC_COAST_ZIPS": _NcCoastZipProxy(),
+        "SC_COAST_ZIPS": _ScCoastZipProxy(),
     }
 
     flags: list[DOIFlag] = []
@@ -194,8 +239,9 @@ def run_jurisdiction_check(event: SubmissionEvent) -> JurisdictionResult:
         routed_to = "compliance_queue"
         blocked_reason = None
     elif disclose_flags:
+        # Requires human disclosure review before Aria forwarding.
         market = "admitted"
-        routed_to = "aria"
+        routed_to = "compliance_queue"
         blocked_reason = None
     else:
         market = "admitted"

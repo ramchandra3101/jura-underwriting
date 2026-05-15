@@ -1,21 +1,81 @@
 metadata:
-  last_updated: "2024-03-15"
-  source: "FL DOI Emergency Order 2024-01"
-  description: "Coastal ZIP codes subject to new business moratorium for property coverage"
+  last_updated: "2024-06-01"
+  source: "FL DOI Emergency Order 2024-01 + prior orders"
+  description: >
+    Coastal ZIP codes subject to new-business moratorium for property coverage.
+    These ZIPs are in high-catastrophe-exposure coastal areas where admitted
+    carriers have withdrawn or been restricted from writing new business.
 
 moratorium_zips:
+  # Miami Beach / Miami-Dade coast
   - "33139"   # Miami Beach
   - "33140"   # Miami Beach (North)
   - "33141"   # Miami Beach (Normandy Isles)
   - "33154"   # Bal Harbour
   - "33160"   # North Miami Beach / Sunny Isles
-  - "34228"   # Longboat Key
-  - "34236"   # Sarasota (bayfront)
-  - "32459"   # Santa Rosa Beach
-  - "32550"   # Miramar Beach / Destin area
+  - "33109"   # Fisher Island
+  - "33149"   # Key Biscayne
+
+  # Florida Keys
+  - "33040"   # Key West
+  - "33041"   # Key West (PO Boxes)
+  - "33043"   # Big Pine Key
+  - "33050"   # Marathon
+  - "33051"   # Key Colony Beach
+  - "33070"   # Tavernier / Upper Keys
+
+  # Broward County coast
+  - "33305"   # Fort Lauderdale Beach
+  - "33308"   # Pompano Beach
+  - "33316"   # Fort Lauderdale port area
+  - "33062"   # Pompano Beach Highlands
+  - "33441"   # Deerfield Beach
+  - "33483"   # Delray Beach
+
+  # Palm Beach County coast
+  - "33408"   # North Palm Beach
+  - "33435"   # Boynton Beach coastal
+  - "33462"   # Lantana / Lake Worth Beach
+  - "33487"   # Boca Raton east
+
+  # Space Coast (Brevard County)
+  - "32931"   # Cocoa Beach
+  - "32950"   # Melbourne Beach
+  - "32951"   # Melbourne Beach south
+
+  # Tampa Bay / Pinellas coast
   - "33755"   # Clearwater
-  - "33756"   # Clearwater (South)
+  - "33756"   # Clearwater south
   - "33767"   # Clearwater Beach
+  - "33706"   # St. Pete Beach
+  - "33707"   # Treasure Island
+  - "33708"   # Madeira Beach
+  - "33715"   # Tierra Verde
+  - "33716"   # St. Petersburg coastal
+
+  # Sarasota / Charlotte coast
+  - "34228"   # Longboat Key
+  - "34236"   # Sarasota bayfront
+  - "34229"   # Osprey
+
+  # Fort Myers / Lee County coast
+  - "33931"   # Fort Myers Beach
+  - "33957"   # Sanibel Island
+  - "33924"   # Captiva Island
+
+  # Collier County (Naples)
   - "34102"   # Naples
   - "34103"   # Naples Park Shore
   - "34108"   # Naples Pelican Bay
+  - "34145"   # Marco Island
+
+  # Charlotte coast
+  - "33946"   # Englewood Beach
+  - "33950"   # Punta Gorda
+
+  # Panhandle / Northwest Florida coast
+  - "32459"   # Santa Rosa Beach / 30A
+  - "32550"   # Miramar Beach / Destin area
+  - "32561"   # Gulf Breeze
+  - "32548"   # Fort Walton Beach
+  - "32541"   # Destin

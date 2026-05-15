@@ -1,15 +1,9 @@
 """Jurisdiction checker tests — all deterministic, no LLM calls."""
 from __future__ import annotations
 
-import os
-from datetime import datetime
-from pathlib import Path
-
 import pytest
 
-from jura.checker import (
-    run_jurisdiction_check,
-)
+from jura.checker import run_jurisdiction_check
 from jura.models import JurisdictionBlock, SubmissionEvent
 
 
@@ -33,23 +27,22 @@ def _event(**overrides) -> SubmissionEvent:
 
 
 # ---------------------------------------------------------------------------
-# 1. TX admitted — market=admitted, no active flags
+# 1. TX admitted — market=admitted, routed to aria, no active flags
 # ---------------------------------------------------------------------------
 
 def test_tx_admitted_clear():
     result = run_jurisdiction_check(_event(state="TX"))
     assert result.market == "admitted"
-    assert result.admitted is True
     assert result.eligible is True
     assert result.has_block is False
-    active = [f for f in result.doi_flags if f.level != "clear"]
-    # tx_surplus_threshold not triggered (TIV 500k < 5M)
-    assert not any(f.level == "block" for f in active)
+    assert result.routed_to == "aria"
+    # tx_surplus_threshold not triggered (TIV 500k < 5M threshold)
+    assert not any(f.level == "block" for f in result.doi_flags)
 
 
 # ---------------------------------------------------------------------------
 # 2. CA non-FAIR-Plan ZIP + credit_score_used → ca_ab2414 disclose flag
-#    Using ZIP 94102 (SF, prefix "941" — not in wildfire FAIR Plan list).
+#    ZIP 94102 (SF, prefix "941" — not in wildfire FAIR Plan list).
 # ---------------------------------------------------------------------------
 
 def test_ca_credit_disclose():
@@ -57,7 +50,7 @@ def test_ca_credit_disclose():
         _event(
             submission_id="TEST-CA-CREDIT",
             state="CA",
-            zip_code="94102",   # San Francisco — prefix 941, not a FAIR Plan zone
+            zip_code="94102",
             credit_score_used=True,
         )
     )
@@ -93,7 +86,7 @@ def test_ca_fair_plan_zip_raises():
         run_jurisdiction_check(
             _event(
                 state="CA",
-                zip_code="91901",   # prefix 919 — Malibu/Pacific Palisades zone
+                zip_code="91901",
             )
         )
     assert "FAIR Plan" in exc_info.value.reason or "fair" in exc_info.value.reason.lower()
@@ -101,7 +94,8 @@ def test_ca_fair_plan_zip_raises():
 
 
 # ---------------------------------------------------------------------------
-# 5. NY + credit_score_used → block flag ny_part86, eligible=False
+# 5. NY + credit_score_used → block flag ny_part86
+#    market="blocked", eligible=False, routed_to="blocked"
 # ---------------------------------------------------------------------------
 
 def test_ny_credit_block():
@@ -116,32 +110,33 @@ def test_ny_credit_block():
     assert "ny_part86" in block_ids
     assert result.has_block is True
     assert result.eligible is False
-    assert result.market == "restricted"
+    assert result.market == "blocked"
+    assert result.routed_to == "blocked"
 
 
 # ---------------------------------------------------------------------------
-# 6. CA/NV multi-state → multi_state=True detected
+# 6. CA non-FAIR-Plan ZIP, no credit score → clean admitted result
 # ---------------------------------------------------------------------------
 
-def test_ca_nv_multi_state():
+def test_ca_clean_admitted():
     result = run_jurisdiction_check(
         _event(
             state="CA",
-            zip_code="94102",   # SF — not a FAIR Plan or moratorium zip
+            zip_code="94102",
+            credit_score_used=False,
         )
     )
-    assert result.multi_state is True
-    jd = detect_jurisdiction(
-        _event(state="CA")
-    )
-    assert jd["multi_state"] is True
+    assert result.market == "admitted"
+    assert result.has_block is False
+    assert result.eligible is True
 
 
 # ---------------------------------------------------------------------------
-# 7. TX TIV $6M → es_eligible=True, warn flag tx_surplus_threshold
+# 7. TX TIV $6M → market=es, warn flag tx_surplus_threshold triggered
+#    Routed to compliance_queue (surplus threshold exceeded)
 # ---------------------------------------------------------------------------
 
-def test_tx_high_tiv_surplus_warn():
+def test_tx_high_tiv_surplus():
     result = run_jurisdiction_check(
         _event(
             state="TX",
@@ -150,11 +145,12 @@ def test_tx_high_tiv_surplus_warn():
     )
     warn_ids = {f.rule_id for f in result.doi_flags if f.level == "warn"}
     assert "tx_surplus_threshold" in warn_ids
-    assert result.es_eligible is True
+    assert result.market == "es"
+    assert result.routed_to == "compliance_queue"
 
 
 # ---------------------------------------------------------------------------
-# 8. eligible=True for admitted-clear, False for restricted
+# 8. eligible computed field — True for admitted, False for blocked
 # ---------------------------------------------------------------------------
 
 def test_eligible_admitted_clear():
@@ -162,7 +158,7 @@ def test_eligible_admitted_clear():
     assert result.eligible is True
 
 
-def test_eligible_false_for_restricted():
+def test_eligible_false_for_blocked():
     result = run_jurisdiction_check(
         _event(
             state="NY",
@@ -171,24 +167,38 @@ def test_eligible_false_for_restricted():
         )
     )
     assert result.eligible is False
-    assert result.market == "restricted"
+    assert result.market == "blocked"
 
 
 # ---------------------------------------------------------------------------
-# 9. Disclosure doc written to data/disclosures/ for disclose flag
+# 9. FL non-moratorium ZIP with property coverage → sinkhole disclose flag
 # ---------------------------------------------------------------------------
 
-def test_disclosure_doc_written():
+def test_fl_sinkhole_disclose():
     result = run_jurisdiction_check(
         _event(
-            submission_id="TEST-DISC-001",
-            state="CA",
-            zip_code="94102",
-            credit_score_used=True,
+            state="FL",
+            zip_code="32200",
         )
     )
+    disclose_ids = {f.rule_id for f in result.doi_flags if f.level == "disclose"}
+    assert "fl_sinkhole" in disclose_ids
     assert result.has_disclose is True
-    assert len(result.disclosure_docs) > 0
-    for path in result.disclosure_docs:
-        assert Path(path).exists(), f"Disclosure doc not found: {path}"
-        assert "TEST-DISC-001" in Path(path).name
+
+
+# ---------------------------------------------------------------------------
+# 10. NY new_business=True → free-look period notice (disclose flag)
+# ---------------------------------------------------------------------------
+
+def test_ny_new_business_disclose():
+    result = run_jurisdiction_check(
+        _event(
+            state="NY",
+            zip_code="10001",
+            credit_score_used=False,
+            new_business=True,
+        )
+    )
+    disclose_ids = {f.rule_id for f in result.doi_flags if f.level == "disclose"}
+    assert "ny_free_look" in disclose_ids
+    assert result.has_disclose is True

@@ -1,5 +1,5 @@
 metadata:
-  version: "1.0.0"
+  version: "2.0.0"
   effective_date: "2024-01-01"
   carrier: "Example Mutual Insurance Co"
 
@@ -12,6 +12,10 @@ thresholds:
       - 8049   # Offices and clinics of other health practitioners
       - 4911   # Electric services
       - 5812   # Eating places
+      - 6512   # Operators of apartment buildings
+      - 1731   # Electrical work (contractors)
+      - 5251   # Hardware stores
+
   FL:
     tiv_threshold: 1000000
     eligible_sics:
@@ -20,6 +24,10 @@ thresholds:
       - 7999   # Amusement and recreation services
       - 5812   # Eating places
       - 1731   # Electrical work
+      - 6512   # Operators of apartment buildings
+      - 4724   # Travel agencies
+      - 5251   # Hardware stores
+
   TX:
     tiv_threshold: 5000000
     eligible_sics:
@@ -28,6 +36,10 @@ thresholds:
       - 4911   # Electric services
       - 7011   # Hotels and motels
       - 5812   # Eating places
+      - 1731   # Electrical work
+      - 1521   # General building contractors — residential buildings
+      - 4953   # Refuse systems
+
   NY:
     tiv_threshold: 3000000
     eligible_sics:
@@ -36,24 +48,136 @@ thresholds:
       - 8049   # Offices and clinics of other health practitioners
       - 5812   # Eating places
       - 7372   # Prepackaged software
+      - 6512   # Operators of apartment buildings
+      - 4724   # Travel agencies
+      - 8742   # Management consulting services
+
+  IL:
+    tiv_threshold: 3000000
+    eligible_sics:
+      - 7011   # Hotels and motels
+      - 5812   # Eating places
+      - 6512   # Operators of apartment buildings
+      - 7372   # Prepackaged software
+      - 4953   # Refuse systems
+      - 8742   # Management consulting services
+
+  NJ:
+    tiv_threshold: 2000000
+    eligible_sics:
+      - 7011   # Hotels and motels
+      - 5812   # Eating places
+      - 6512   # Operators of apartment buildings
+      - 7999   # Amusement and recreation services
+      - 4724   # Travel agencies
+
+  MA:
+    tiv_threshold: 1500000
+    eligible_sics:
+      - 7011   # Hotels and motels
+      - 5812   # Eating places
+      - 6512   # Operators of apartment buildings
+      - 7372   # Prepackaged software
+      - 8742   # Management consulting services
+      - 8049   # Health practitioners
+
+  WA:
+    tiv_threshold: 1500000
+    eligible_sics:
+      - 2411   # Logging
+      - 0811   # Timber tracts
+      - 7011   # Hotels and motels
+      - 5812   # Eating places
+      - 6512   # Operators of apartment buildings
+      - 4953   # Refuse systems
+
+  LA:
+    tiv_threshold: 1000000
+    eligible_sics:
+      - 1311   # Crude petroleum and natural gas
+      - 1381   # Drilling oil and gas wells
+      - 7011   # Hotels and motels
+      - 5812   # Eating places
+      - 4481   # Deep sea transportation
+      - 6512   # Operators of apartment buildings
+
+  PA:
+    tiv_threshold: 3000000
+    eligible_sics:
+      - 7011   # Hotels and motels
+      - 5812   # Eating places
+      - 6512   # Operators of apartment buildings
+      - 7372   # Prepackaged software
+      - 4953   # Refuse systems
+
+  GA:
+    tiv_threshold: 2000000
+    eligible_sics:
+      - 7011   # Hotels and motels
+      - 5812   # Eating places
+      - 6512   # Operators of apartment buildings
+      - 4724   # Travel agencies
+      - 4953   # Refuse systems
+
+  AZ:
+    tiv_threshold: 2000000
+    eligible_sics:
+      - 7011   # Hotels and motels
+      - 5812   # Eating places
+      - 6512   # Operators of apartment buildings
+      - 1731   # Electrical work
+      - 4953   # Refuse systems
+
+  CO:
+    tiv_threshold: 2000000
+    eligible_sics:
+      - 7011   # Hotels and motels
+      - 5812   # Eating places
+      - 6512   # Operators of apartment buildings
+      - 1731   # Electrical work
+      - 2411   # Logging
+      - 7999   # Amusement and recreation services
 
 diligent_search_requirements:
   CA:
     min_declinations: 3
-    notes: "Must document three admitted market declinations before E&S placement per CA Ins Code §1765.1"
+    notes: "Three admitted market declinations required before E&S placement — CA Ins Code §1765.1"
   FL:
     min_declinations: 3
-    notes: "Three admitted market declinations required per FL Ins Code §626.916"
+    notes: "Three admitted market declinations required — FL Ins Code §626.916"
   TX:
     min_declinations: 2
-    notes: "Two admitted market declinations required per TX Ins Code §981.005"
+    notes: "Two admitted market declinations required — TX Ins Code §981.005"
   NY:
     min_declinations: 3
-    notes: "Three admitted market declinations required per NY Ins Law §2118"
+    notes: "Three admitted market declinations required — NY Ins Law §2118"
+  IL:
+    min_declinations: 3
+    notes: "Three declinations required — IL Ins Code §445.1"
+  NJ:
+    min_declinations: 3
+    notes: "Three declinations required — NJ Rev Stat §17:22-6.42"
+  MA:
+    min_declinations: 3
+    notes: "Diligent search required — 209 CMR 182.07"
+  WA:
+    min_declinations: 3
+    notes: "Three declinations required — WA Rev Code §48.15.073"
+  LA:
+    min_declinations: 3
+    notes: "Three declinations required — LA Rev Stat §22:434"
+  PA:
+    min_declinations: 3
+    notes: "Three declinations required — PA Stat §40 P.S. §991.1604"
 
 mock_admitted_carriers:
-  - "Keystone Mutual"
-  - "Atlas Property Insurance"
-  - "Meridian Casualty Co"
-  - "Summit Underwriters"
+  - "Keystone Mutual Insurance Co"
+  - "Atlas Property & Casualty"
+  - "Meridian Commercial Casualty"
+  - "Summit Commercial Underwriters"
   - "Coastal Re Group"
+  - "Pinnacle National Insurance"
+  - "Heritage Mutual Commercial"
+  - "Granite State Property & Casualty"
+  - "Frontier Commercial Insurance Co"
+  - "Pacific Rim Commercial Underwriters"
